@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+  <head>
+    <title>Bate-papo Node.js e Socket.IO</title>
+    <style>
+      body {
+        background-color: #000; 
+        color: #00ff00; 
+        font-family: "Courier New", monospace; 
+        margin: 0;
+        padding: 20px;
+        justify-content: center;
+        align-items: center;
+        display: flex;
+      }
+
+      #mensagens {
+        background-color: #000;
+        padding: 10px;
+        height: 70vh; 
+        max-height: 600px; 
+        width: 90%; 
+        max-width: 800px; 
+        overflow-y: auto;
+        overflow-x: hidden; 
+        word-wrap: break-word;
+        white-space: pre-wrap; 
+        margin-bottom: 20px; 
+      }
+
+      .message {
+        margin-bottom: 5px;
+      }
+
+      input, button {
+        background-color: #111;
+        color: #0f0;
+        border: 1px solid #0f0;
+        padding: 5px;
+        font-family: "Courier New", monospace;
+      }
+
+      input:focus, button:hover {
+        background-color: #0a0;
+        color: #000;
+      }
+
+      form {
+        display: flex;
+        justify-content: center;
+        gap: 10px;
+        position: fixed;      
+        bottom: 20px;         
+        left: 50%;
+        transform: translateX(-50%);
+        width: 90%;           
+        max-width: 800px;     
+        background-color: #000;
+        padding: 10px;
+        border-radius: 10px;
+        border: 1px solid #00ff00;
+      }
+
+      ul{ 
+        list-style-type: none; padding: 0; 
+      }
+
+      #chat {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: flex-start;
+        padding-bottom: 100px; 
+      }
+
+      .msg-container {
+        display: flex;
+        flex-direction: column;   
+        align-items: flex-start;  
+        margin: 10px 0;
+      }
+
+      .balao {
+        background-color: #111;
+        border: 1px solid #0f0;
+        padding: 8px 12px;
+        border-radius: 10px;
+        max-width: 60%;
+        font-size: 14px;
+      }
+
+      .eu {
+        justify-content: flex-end;
+        align-items: flex-end; 
+      }   
+
+      .eu .balao {
+        background-color: #003300;
+        border-color: #00ff00;
+      }
+
+      .outro {
+        justify-content: flex-start;
+      }
+
+      .sistema {
+        justify-content: center !important;
+        align-items: center !important;
+      }
+
+      .sistema .balao {
+        background-color: #000;
+        border-color: #ff0;
+        color: #ff0;
+        text-align: center;
+      }
+
+      .hora {
+        font-size: 15px;
+        color: #0f0;
+        margin-top: 2px;
+        opacity: 0.7;
+      }
+
+      #mensagens::-webkit-scrollbar {
+        width: 10px;
+      }
+
+      #mensagens::-webkit-scrollbar-track {
+        background: #000;
+        border: 1px solid #00ff00;
+      }
+
+      #mensagens::-webkit-scrollbar-thumb {
+        background: #00ff00;
+        border-radius: 10px;
+      }
+
+      #mensagens::-webkit-scrollbar-thumb:hover {
+        background: #0f0;
+      }
+
+      #mensagens {
+        scrollbar-width: thin;
+        scrollbar-color: #00ff00 #000;
+      }
+    </style>
+  </head>
+  <body>
+
+    <div id="chat">
+      <ul id="mensagens"></ul>
+      <form>
+        <input id="nome" placeholder="Seu nome de usuário" autocomplete="off" /><br>
+        <input id="mensagem" placeholder="Sua mensagem" autocomplete="off" />
+        <button>Enviar</button>
+      </form>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+      const socket = io();
+      const nomeInput = document.getElementById('nome');
+      const mensagemInput = document.getElementById('mensagem');
+      const mensagens = document.getElementById('mensagens');
+
+      
+      const timesCensurados = [
+        "Flamengo", "flamengo", "Palmeiras","palmeiras", "atletico-mg", "Atlético-MG", "Fluminense","fluminense",
+        "Botafogo","botafogo", "Santos", "santos", "São Paulo","sao paulo", "Cruzeiro","cruzeiro",
+        "Grêmio","gremio", "Internacional", "internacional", "Ceará", "ceara", "Coritiba","coritiba",
+        "Athletico-PR","athletico-pr","furacão", "Bragantino","bragantino", "Fortaleza","fortaleza", "Bahia","bahia",
+        "Goiás","goias", "Vasco","vasco", "Red Bull Bragantino","Mirassol","mirassol"
+      ];
+
+      function censurarMensagem(msg) {
+        let texto = msg;
+        timesCensurados.forEach(time => {
+          const regex = new RegExp(time, "gi");
+          texto = texto.replace(regex, "*****");
+        });
+        return texto;
+      }
+
+      
+      //envio de mensagem
+     
+      document.querySelector('form').addEventListener('submit', event => {
+        event.preventDefault();
+        const nome = nomeInput.value.trim();
+        let mensagem = mensagemInput.value.trim();
+
+        if (!nome) return alert("Digite seu nome!");
+        if (!mensagem) return alert("Digite uma mensagem!");
+
+        // Registrar usuário na primeira mensagem
+        if (!nomeInput.disabled) {
+          socket.emit("registrar usuario", nome);
+
+          socket.emit('chat message', {
+            nome: "Bem-Vindo!!!",
+            mensagem: `${nome} entrou na conversa!`
+          });
+        }
+
+        // PM (/pm usuario mensagem)
+        if (mensagem.startsWith("/pm ")) {
+          const partes = mensagem.split(" ");
+          const para = partes[1];
+          const texto = partes.slice(2).join(" ");
+
+          socket.emit("mensagem privada", { de: nome, para, mensagem: texto });
+          mensagemInput.value = "";
+          nomeInput.disabled = true;
+          return;
+        }
+
+        mensagem = censurarMensagem(mensagem);
+        socket.emit('chat message', { nome, mensagem });
+        mensagemInput.value = "";
+        nomeInput.disabled = true;
+      });
+
+      // Receber mensagem
+      socket.on('chat message', dados => {
+        const li = document.createElement("li");
+        const container = document.createElement("div");
+        container.classList.add("msg-container");
+
+        let souEu = nomeInput.value.trim() === dados.nome;
+        let isSistema = dados.nome === "Bem-Vindo!!!";
+
+        if (isSistema) container.classList.add("sistema");
+        else container.classList.add(souEu ? "eu" : "outro");
+
+        const balao = document.createElement("div");
+        balao.classList.add("balao");
+        balao.textContent = isSistema ? dados.mensagem : `${dados.nome}: ${dados.mensagem}`;
+
+        const agora = new Date();
+        const horario = agora.getHours().toString().padStart(2,"0")+":"+agora.getMinutes().toString().padStart(2,"0");
+
+        const hora = document.createElement("div");
+        hora.classList.add("hora");
+        hora.textContent = horario;
+
+        container.appendChild(balao);
+        container.appendChild(hora);
+        li.appendChild(container);
+
+        // Detecta se o scroll está no fim
+        const estaNoFim = mensagens.scrollTop + mensagens.clientHeight >= mensagens.scrollHeight - 5;
+        mensagens.appendChild(li);
+        if (estaNoFim) mensagens.scrollTop = mensagens.scrollHeight;
+      });
+
+      // Mensagem privada
+      socket.on("mensagem privada", dados => {
+        const li = document.createElement("li");
+        li.innerHTML = `<strong style="color:#ff0">(Privado) ${dados.de} → ${dados.para || ''}:</strong> ${dados.mensagem}`;
+        const estaNoFim = mensagens.scrollTop + mensagens.clientHeight >= mensagens.scrollHeight - 5;
+        mensagens.appendChild(li);
+        if (estaNoFim) mensagens.scrollTop = mensagens.scrollHeight;
+      });
+
+      // Mensagem ao sair
+      window.addEventListener("beforeunload", () => {
+        const nome = nomeInput.value.trim();
+        if (nome) {
+          socket.emit("chat message", { nome: "Bem-Vindo!!!", mensagem: `${nome} saiu da conversa!` });
+        }
+      });
+    </script>
+  </body>
+</html>
